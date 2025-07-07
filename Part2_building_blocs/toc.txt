@@ -1,0 +1,41 @@
+I put my simulation code in the R package {tssim} where I use the sim_daily() function. I recently put two other simulation algorithms in the package as well sim_daily_hs() and sim_daily_mstl() which are based on some papers. 
+The sim_daily_hs() functions is based on some structural time series models, while sim_daily_mstl is essentially just a simplified variant of my original sim_daily(). They used it in the paper describing the MSTL method.
+
+For centering regressors, I’ll put the code that we are using below. I don’t think I included it in any packages that are on CRAN.
+
+In the old {dsa} I do not center the regressors. Instead we ensure that the mean of the adjusted series is equal to the mean of the original series (the mean is only calculated on full years if I remember correctly). 
+In {dsa2} we changed our philosophy to use centered regressors. This may be a controversial topic, not all people at BBk share this view, yet, some of the reasons are the following:
+-	It is not clear how best to benchmark the adjusted series to the original series. Also it may cause annual shifts of the series once full years become available (and I do not think it is advisable to include incomplete years in the calculation of the mean, as this probably will additional intra-annual revisions), and the code sometimes caused problems when we took logs of the series.
+-	Generally, the reasoning behind using centered regressors is the same as for monthly time series: I would like the effect to be free from seasonal means and the mean effect (over many years) should be zero. Relatedly: It should enhance the consistency between the seasonal adjustment of daily and monthly series
+
+center_regressor <- function (x)  {
+    classX <- class(x)[1]
+    if (!classX %in% c("ts", "mts", "xts")) {
+        stop("x must be a 'ts-', 'mts-' or 'xts-object'!")
+    }
+    else if (classX == "ts" | classX == "mts") {
+        x <- xts::as.xts(x)
+    }
+    .substr_from <- function(x) {
+        dates <- as.character(zoo::index(x))
+        return(substr(dates, 6, nchar(dates)))
+    }
+    yearless_dates <- .substr_from(x)
+    means <- stats::aggregate(x = x, by = yearless_dates, FUN = mean, 
+        na.rm = TRUE)
+    .subs <- function(y, means) {
+        as.numeric(y) - as.numeric(means[grep(.substr_from(y), 
+            zoo::index(means))])
+    }
+    out <- sapply(seq_len(nrow(x)), function(y) .subs(x[y], means = means))
+    if (is.matrix(out)) {
+        out <- t(out)
+    }
+    out <- xts::xts(out, zoo::index(x))
+    colnames(out) <- colnames(x)
+    if (classX == "ts" | classX == "mts") {
+        out <- stats::as.ts(out)
+    }
+    return(out)
+}
+
